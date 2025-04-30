@@ -11,7 +11,7 @@ Estructura de servicios para implementación de un sistema completo de MLOps par
 
 ## Descripción del Proyecto
 
-Este proyecto implementa un ambiente productivo para MLOps que consta de varios servicios:
+Este proyecto implementa un ambiente productivo para MLOps que consta de varios servicios desplegados mediante contenedores:
 
 - **Apache Airflow**: Orquestación del pipeline ML (preprocesamiento, entrenamiento y validación)
 - **MLflow**: Seguimiento de experimentos, registro y gestión de modelos
@@ -93,10 +93,10 @@ graph TD
 
 ## Pipeline de Datos y ML
 
-El sistema implementa un flujo de trabajo completo para la predicción de precios de vehículos:
+El sistema implementa un flujo de trabajo completo en Airflow para la predicción de precios de vehículos en línea:
 
 1. **Preprocesamiento**: Limpieza y transformación de datos de vehículos
-2. **Entrenamiento**: Entrenamiento de modelos XGBoost y Ridge
+2. **Entrenamiento**: Entrenamiento de modelos XGBoost, LightGBM, RandomForest y Ridge
 3. **Validación**: Evaluación de precisión de los modelos
 
 ## Detener los Servicios
@@ -130,7 +130,30 @@ MLFLOW_S3_ENDPOINT_URL=http://localhost:9000
 ## Uso de MLflow
 
 Este proyecto utiliza MLflow para el seguimiento de experimentos. Los artefactos se almacenan en el bucket `mlflow` en MinIO.
+Dentro del experimento denominado "Modelos_Regresión", quedan registrados los modelos con sus métricas asociadas durante la fase de entrenamiento.
+
+## Uso del Servicio implementado mediante FastAPI
+
+Para acceder al servicio se ha creado un archivo denominado Prueba.html, el cual implementa un formulario para la carga de los datos de la consulta y un botón para efectuarla. Luego de consultar al modelo servido online, el precio de venta estimado por el modelo es mostrado en pantalla.
+## IMPORTANTE! 
+Es importante mencionar que los archivos .csv del dataset de trabajo, disponbiles en la carpeta /Datasets del proyecto, deben ser cargados manualmente y disponibles en el bucket "data" en MinIO antes de ejecutar el pipeline de trabajo, ya que los procesos intentarán descargarlos al momento de iniciar la ejecución del pipeline.
 
 ## Licencia
 
 Ver archivo LICENSE para detalles.
+
+## Capturas de Pantalla
+
+### Airflow:
+![alt text](image-1.png)
+
+### Minio:
+![alt text](image-5.png)
+
+### MLFlow:
+![alt text](image-3.png)
+
+### Formulario de Test:
+![alt text](image-6.png)
+
+

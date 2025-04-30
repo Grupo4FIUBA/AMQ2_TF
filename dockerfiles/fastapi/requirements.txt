@@ -1,2 +1,12 @@
 fastapi~=0.109
 uvicorn~=0.27
+joblib
+numpy
+pydantic
+joblib
+numpy 
+boto3
+lightgbm
+xgboost
+dill
+scikit-learn
