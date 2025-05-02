@@ -60,44 +60,143 @@ graph TD
 - [Docker](https://docs.docker.com/engine/install/) y Docker Compose
 - Git
 
-## Instalación y Ejecución
+## Instalación y Ejecución de Servicios
 
 1. Clonar este repositorio:
    ```bash
-   git clone <url-del-repositorio>
-   cd amq2-service-ml
+   git clone https://github.com/Grupo4FIUBA/AMQ2_TF.git
+   cd AMQ2_TF
    ```
-
-2. Crear la estructura de directorios necesaria:
-   ```bash
-   mkdir -p airflow/config airflow/dags airflow/logs airflow/plugins airflow/secrets
-   ```
-
-3. Configurar el ID de usuario (solo para Linux/MacOS):
+2. Configurar el ID de usuario (solo para Linux/MacOS):
    - Editar el archivo `.env`
    - Reemplazar `AIRFLOW_UID` con tu ID de usuario: `id -u`
 
-4. **Importante**: El puerto predeterminado para MLflow (5000) podría estar en uso. En ese caso, se ha modificado para usar el puerto 5001 en el archivo `.env` y `docker-compose.yaml`.
-
-5. Iniciar todos los servicios:
+3. Iniciar todos los servicios que se encuentran en contenedores mediante el comando:
    ```bash
    docker compose --profile all up
    ```
 
-6. Acceder a los servicios:
+4. Acceso a los servicios:
    - **Apache Airflow**: http://localhost:8080 (usuario: airflow, contraseña: airflow)
    - **MLflow**: http://localhost:5001
    - **MinIO**: http://localhost:9001 (usuario: minio, contraseña: minio123)
    - **API**: http://localhost:8800/
    - **Documentación API**: http://localhost:8800/docs
 
+5. Copia manual de los archivos correspondientes a las bases de datos de los precios de vehículos en el bucket de Minio denominado "data":
+    Los archivos se encuentran en ./Datasets y corresponden a los cuatro archivos de texto plano .cvs. El preprocesamiento, por cuestiones 
+    referidas a cantidad de registros válidos y calidad de los datos, será efectuado únicamente sobre el archivo Car_details_V3.csv. 
+
 ## Pipeline de Datos y ML
 
-El sistema implementa un flujo de trabajo completo en Airflow para la predicción de precios de vehículos en línea:
+El sistema implementa un flujo de trabajo completo en Airflow para la predicción de precios de vehículos en línea, conformado básicamente por 3 Dags, los cuales deberán ser ejecutados respetando el correspondiente orden:
 
-1. **Preprocesamiento**: Limpieza y transformación de datos de vehículos
-2. **Entrenamiento**: Entrenamiento de modelos XGBoost, LightGBM, RandomForest y Ridge
-3. **Validación**: Evaluación de precisión de los modelos
+1. **Dag de Preprocesamiento: preprocessing_task_pipeline**: Limpieza y transformación de los datos del dataset de trabajo correspondiente a precios de vehículos publicados en un portal de India.
+
+    1. load_data_task():
+            Llama a load_datasets() y selecciona el dataset 'car_details_v3'.
+
+            Lo convierte en JSON para pasarlo entre tareas (Airflow pasa texto entre steps).
+
+    2. basic_cleaning_task(df_json):
+            Reconstruye el DataFrame desde el JSON.
+
+            Aplica basic_cleaning() y lo devuelve como JSON.
+
+    3. prepare_data_task(df_clean_json):
+            Reconstruye el DataFrame limpio.
+
+            Llama a prepare_data().
+
+            Sube X_train, y_train, X_test, y_test como .npy a MinIO.
+    
+
+2. **Dag de Entrenamiento: training_task_pipeline**: Entrenamiento de modelos XGBoost, LightGBM, RandomForest y Ridge. 
+
+    1. Inicialización:
+            Se crea el cliente S3 y se inicializa el logger.
+
+    2. Carga de datos:
+            Se descargan X_train.npy y y_train.npy desde MinIO (datos ya preprocesados y serializados).
+
+    3. Modelos a entrenar:
+            Se definen 4 modelos distintos:
+
+            Ridge (regresión lineal con regularización L2).
+
+            Random Forest.
+
+            XGBoost.
+
+            LightGBM.
+
+    4. Configuración de MLflow:
+            Se apunta al servidor MLflow (http://mlflow:5001).
+
+            Se busca o crea un experimento llamado "Modelos Regresion Entrenados".
+
+    5. Entrenamiento de cada modelo:
+            Para cada modelo:
+
+            Se inicia un run en MLflow.
+
+            Se entrena el modelo sobre X_train y y_train.
+
+            Se calculan métricas: R² y RMSE.
+
+            Se registran parámetros y métricas (automáticamente con mlflow.autolog() y manualmente por redundancia).
+
+            Se guarda el modelo como .pkl.
+
+            Se sube el modelo a MinIO.
+
+            Se registra el modelo en MLflow según su tipo (para facilitar luego su recuperación o deployment).
+
+    6. Logging de errores:
+            Cualquier excepción durante este proceso se loguea en el archivo training.log y se imprime por consola.
+
+3. **Dag de Validación: validation_task_pipeline**: Evaluación de precisión de los modelos
+
+    1. Define un DAG (pipeline de Airflow) llamado 'validation_task_pipeline', sin ejecución programada, para validación de modelos.
+
+    2. Realiza todo el proceso de validación:
+
+                Conecta con MinIO.
+
+                Configura el logger.
+
+                Define la lista de modelos a validar: 'Ridge', 'RandomForest', 'XGBoost', 'LightGBM'.
+
+                Descarga X_test.npy y y_test.npy desde MinIO.
+
+                Configura MLflow para guardar métricas y artefactos en http://mlflow:5001.
+
+                Verifica si el experimento 'Modelos Regresion Entrenados' existe.
+
+    3. Por cada modelo:
+
+                Se descarga el archivo .pkl del modelo desde MinIO.
+
+                Se predicen los valores y_pred con el modelo sobre X_test.
+
+                Se calculan las métricas:
+
+                    R² Score
+
+                    RMSE (Root Mean Squared Error)
+
+                Se registran en el log y en MLflow como una nueva ejecución.
+
+                Se generan los gráficos de validación y se suben también a MLflow.
+
+4. **Servicio de Consulta en Línea
+    1. Acceder mediante un navegador web al archivo denominado ./prueba.html, el cual desplegará un formulario que permitirá la carga de las
+    características del vehículo a consultar. La consulta hace uso del servicio implementado y servido en http://localhost:8800. La lógica de llamada
+    al modelo entrenado se encuentra implementada en el archivo ./dockerfiles/fastapi/app.py, la cual hace uso del modelo XGBoost, pero dado el caso
+    podría ser implementado otro modelo en función de las métricas analizadas.
+
+    2. El servicio tambien puede ser probado accediendo a http://localhost:8800/docs#/default/predict_price_predict_post
+
 
 ## Detener los Servicios
 
@@ -130,7 +229,7 @@ MLFLOW_S3_ENDPOINT_URL=http://localhost:9000
 ## Uso de MLflow
 
 Este proyecto utiliza MLflow para el seguimiento de experimentos. Los artefactos se almacenan en el bucket `mlflow` en MinIO.
-Dentro del experimento denominado "Modelos_Regresión", quedan registrados los modelos con sus métricas asociadas durante la fase de entrenamiento.
+Dentro del experimento denominado "Modelos Regresion Entrenados", quedan registrados los modelos con sus métricas asociadas durante la fase de entrenamiento y validación.
 
 ## Uso del Servicio implementado mediante FastAPI
 
@@ -142,7 +241,7 @@ Es importante mencionar que los archivos .csv del dataset de trabajo, disponbile
 
 Ver archivo LICENSE para detalles.
 
-## Capturas de Pantalla
+## Algunas capturas de pantallas
 
 ### Airflow:
 ![alt text](image-1.png)
