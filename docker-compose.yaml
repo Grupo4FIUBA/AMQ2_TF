@@ -24,6 +24,9 @@ x-airflow-common: &airflow-common
     - ${AIRFLOW_PROJ_DIR:-./airflow}/dags:/opt/airflow/dags
     - ${AIRFLOW_PROJ_DIR:-./airflow}/logs:/opt/airflow/logs
     - ${AIRFLOW_PROJ_DIR:-./airflow}/config:/opt/airflow/config
+    - ${AIRFLOW_PROJ_DIR:-./airflow}/data:/opt/airflow/data
+    - ${AIRFLOW_PROJ_DIR:-./airflow}/model:/opt/airflow/model
+    - ${AIRFLOW_PROJ_DIR:-./airflow}/service:/opt/airflow/service
     - ${AIRFLOW_PROJ_DIR:-./airflow}/plugins:/opt/airflow/plugins
     - ${AIRFLOW_PROJ_DIR:-./airflow}/secrets:/opt/secrets
   networks:
@@ -106,6 +109,11 @@ services:
       /usr/bin/mc policy download s3/${MLFLOW_BUCKET_NAME:-mlflow};
       [[ ! -z "`/usr/bin/mc ls s3 | grep challenge`" ]] || /usr/bin/mc mb s3/${DATA_REPO_BUCKET_NAME:-data};
       /usr/bin/mc policy download s3/${DATA_REPO_BUCKET_NAME:-data};
+      /usr/bin/mc policy download s3/${DATA_REPO_BUCKET_NAME:-data}/raw;
+      mc cp --attr "" /dev/null s3/${DATA_REPO_BUCKET_NAME:-data}/raw/.keep;
+      mc cp --attr "" /dev/null s3/${DATA_REPO_BUCKET_NAME:-data}/trusted/.keep;
+      mc cp --attr "" /dev/null s3/${DATA_REPO_BUCKET_NAME:-data}/refined/.keep;
+      mc cp --attr "" /dev/null s3/${DATA_REPO_BUCKET_NAME:-data}/model/.keep;
       exit 0;
       '
 

@@ -1,11 +1,20 @@
-FROM python:3.8-slim
+# Usar una imagen base liviana de Python
+FROM python:3.10-slim
 
+# Establecer el directorio de trabajo
 WORKDIR /app
-COPY . .
-COPY requirements.txt /requirements.txt
 
-RUN apt-get update && apt-get install -y curl -y libgomp1 
-RUN pip install --upgrade pip
-RUN pip install --no-cache-dir -r /requirements.txt
+# Copiar los archivos al contenedor
+COPY ./requirements.txt ./requirements.txt
+COPY ./app.py ./app.py
+COPY ./s3.py ./s3.py
 
-EXPOSE 8800
+
+# Instalar las dependencias
+RUN pip install --upgrade pip && pip install -r requirements.txt
+
+# Exponer el puerto por defecto de FastAPI/Uvicorn
+EXPOSE 8000
+
+# Comando para ejecutar la app con Uvicorn
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]

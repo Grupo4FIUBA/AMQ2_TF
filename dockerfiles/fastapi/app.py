@@ -1,113 +1,64 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-import joblib
-import dill
+from typing import List
 import numpy as np
-import os
 import boto3
-from fastapi.middleware.cors import CORSMiddleware
-from lightgbm import LGBMRegressor  # Modelo LightGBM para regresión
-from xgboost import XGBRegressor  # Modelo XGBoost para regresión
+import joblib
+import io
+import sys, os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Crear directorios si no existen
-os.makedirs("models", exist_ok=True)
-os.makedirs("logs", exist_ok=True)
+from s3 import AWSConnector
 
-MODEL_PATH = os.path.join("models")
+class InputData(BaseModel):
+    features: List[float]
 
-# Inicializar la aplicación
-app = FastAPI()
+class APIModelos:
 
-# Middleware para CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+    def __init__(self):
+        self.app = FastAPI(title="API de Modelos de ML")
+        self.bucket = 'mi-bucket-modelos'
+        self.s3=AWSConnector()
+        self.model_ridge=self.s3.read_pkl_from_s3("modelo", "model_ridge.pkl")
+        self.model_regression_linear=self.s3.read_pkl_from_s3("modelo", "model_regression_linear.pkl")
+        self.model_svm_regressor=self.s3.read_pkl_from_s3("modelo", "model_svm_regressor.pkl")
+        self.model_xgb_regressor=self.s3.read_pkl_from_s3("modelo", "model_xgb_regressor.pkl")
+        self.modelos = {
+            'ridge': 'modelo_ridge.pkl',
+            'linear': 'modelo_linear.pkl',
+            'svr': 'modelo_svr.pkl',
+            'xgb': 'modelo_xgb.pkl'
+        }
+        # Rutas
+        self.definir_rutas()
 
-# Configuración del cliente S3 para MinIO
-s3 = boto3.client(
-    's3',
-    endpoint_url='http://S3:9000',
-    aws_access_key_id='minio',
-    aws_secret_access_key='minio123',
-    region_name='us-east-1'
-)
+    def definir_rutas(self):
+        @self.app.post("/predecir/{modelo}")
+        def predecir(modelo: str, data: InputData):
+            if modelo not in self.modelos:
+                raise HTTPException(status_code=404, detail="Modelo no disponible")
 
-# Cargar modelos desde MinIO
-MINIO_BUCKET = 'data'
-model_files = {
-    "model": "XGBoost.pkl",
-    "encoder": "encoder.pkl",
-    "scaler": "scaler.pkl"
-}
+            try:
+                modelo_sklearn = self.obtener_modelo(modelo)
+                entrada = np.array(data.features).reshape(1, -1)
+                prediccion = modelo_sklearn.predict(entrada)
+                return {"modelo": modelo, "prediccion": float(prediccion[0])}
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
 
-for key, filename in model_files.items():
-    local_path = os.path.join(MODEL_PATH, filename)
-    try:
-        #local_path = os.path.join("models", filename)
-        print(f"Descargando '{filename}' desde bucket '{MINIO_BUCKET}'...")
-        s3.download_file(MINIO_BUCKET, filename, local_path)
-        with open(local_path, 'rb') as f:
-            globals()[key] = joblib.load(f)
-        print(f"'{filename}' cargado exitosamente.")
-    except Exception as e:
-        print(f"Error al procesar '{filename}': {e}")
-        raise e  # o continuar si querés que cargue lo que pueda
+    def obtener_modelo(self, nombre_modelo: str):
+        
+        nombre_archivo = self.modelos[nombre_modelo]
+        try:
+            with io.BytesIO() as f:
+                self.s3.download_fileobj(self.bucket, nombre_archivo, f)
+                f.seek(0)
+                modelo = joblib.load(f)
+                self.cache[nombre_modelo] = modelo
+                return modelo
+        except Exception as e:
+            raise RuntimeError(f"Error al cargar modelo desde S3: {e}")
 
-
-# Modelo de datos esperado por el endpoint
-class CarFeatures(BaseModel):
-    year: int
-    km_driven: int
-    engine_cc: float
-    max_power_bhp: float
-    mileage_kmpl: float
-    seats: int
-    torque_nm: float
-    torque_rpm: int
-    owner_rank: int
-    fuel: str
-    seller_type: str
-    transmission: str
-    brand: str
-
-@app.post("/predict")
-def predict_price(features: CarFeatures):
-    try:
-        # Datos categóricos
-        cat_data = [[
-            features.fuel,
-            features.seller_type,
-            features.transmission,
-            features.brand
-        ]]
-        cat_encoded = encoder.transform(cat_data)
-
-        # Datos numéricos
-        numeric_data = [[
-            features.year,
-            features.km_driven,
-            features.engine_cc,
-            features.max_power_bhp,
-            features.mileage_kmpl,
-            features.seats,
-            features.torque_nm,
-            features.torque_rpm,
-            features.owner_rank
-        ]]
-        numeric_scaled = scaler.transform(numeric_data)
-
-        # Concatenar todos los datos
-        full_input = np.hstack((numeric_scaled, cat_encoded))
-
-        # Predicción
-        prediction = model.predict(full_input)[0]
-        return {"predicted_price": float(prediction)}
-    
-    except Exception as e:
-        return {"error": str(e)}
-
-# Ejecutar con: uvicorn main:app --host 0.0.0.0 --port 8000
+# Instancia la clase
+api_modelos = APIModelos()
+app = api_modelos.app
