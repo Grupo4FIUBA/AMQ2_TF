@@ -1,11 +1,12 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import List
 import numpy as np
 import boto3
 import joblib
 import io
 import sys, os
+from typing import List 
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from s3 import AWSConnector
@@ -19,10 +20,10 @@ class APIModelos:
         self.app = FastAPI(title="API de Modelos de ML")
         self.bucket = 'mi-bucket-modelos'
         self.s3=AWSConnector()
-        self.model_ridge=self.s3.read_pkl_from_s3("modelo", "model_ridge.pkl")
-        self.model_regression_linear=self.s3.read_pkl_from_s3("modelo", "model_regression_linear.pkl")
-        self.model_svm_regressor=self.s3.read_pkl_from_s3("modelo", "model_svm_regressor.pkl")
-        self.model_xgb_regressor=self.s3.read_pkl_from_s3("modelo", "model_xgb_regressor.pkl")
+        self.model_regression_linear=self.s3.read_pkl_from_s3("model", "model_regression_linear.pkl")
+        self.model_ridge=self.s3.read_pkl_from_s3("model", "model_ridge.pkl")
+        self.model_svm_regressor=self.s3.read_pkl_from_s3("model", "model_svm_regressor.pkl")
+        self.model_xgb_regressor=self.s3.read_pkl_from_s3("model", "model_xgb_regressor.pkl")
         self.modelos = {
             'ridge': 'modelo_ridge.pkl',
             'linear': 'modelo_linear.pkl',

@@ -1,20 +1,21 @@
-# Usar una imagen base liviana de Python
-FROM python:3.10-slim
+FROM python:3.8-slim
 
-# Establecer el directorio de trabajo
-WORKDIR /app
+# Copiar los archivos de requisitos primero para aprovechar la caché de Docker
+COPY requirements.txt .
 
-# Copiar los archivos al contenedor
-COPY ./requirements.txt ./requirements.txt
-COPY ./app.py ./app.py
-COPY ./s3.py ./s3.py
+# Instalar dependencias
+RUN apt-get update && \
+    apt-get install -y curl libgomp1 && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    pip install --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
+# Copiar el código de la aplicación
+COPY app.py s3.py ./
 
-# Instalar las dependencias
-RUN pip install --upgrade pip && pip install -r requirements.txt
+# Exponer el puerto para la API
+EXPOSE 8800
 
-# Exponer el puerto por defecto de FastAPI/Uvicorn
-EXPOSE 8000
-
-# Comando para ejecutar la app con Uvicorn
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+# Comando para ejecutar la aplicación
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8800"]
